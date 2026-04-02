@@ -29,7 +29,10 @@ for filename in os.listdir(data_dir):
     if filename.endswith(".txt"):
         filepath = os.path.join(data_dir, filename)
         loader = TextLoader(filepath, encoding = 'utf-8')
-        documents.extend(loader.load())
+        loaded_docs = loader.load()
+        for doc in loaded_docs:
+            doc.metadata["source"] = filename
+        documents.extend(loaded_docs)
         print(f"Loaded : {filename}")
 
 print(f"\Total page loaded: {len(documents)}")
@@ -58,7 +61,7 @@ vectorstore = Chroma.from_documents(
 
 print(f"\nVector store created with {vectorstore._collection.count()} chunks")
 
-query = "What are the fair practices for loan recovery by NBFCs?"
+'''query = "What are the fair practices for loan recovery by NBFCs?"
 result = vectorstore.similarity_search(query, k=3)
 
 print(f"\nQuery : {query}")
@@ -67,4 +70,52 @@ print(f"Top {len(result)} results:\n")
 for i, doc in enumerate(result, 1):
     print(f"----Result {i}----")
     print(doc.page_content[:300])
-    print()
+    print()'''
+
+
+from dotenv import load_dotenv
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+
+
+load_dotenv()
+
+llm = ChatGroq(model_name = "llama-3.3-70b-versatile", temperature = 0)
+retriever = vectorstore.as_retriever(search_kwargs = {"k" : 4})
+prompt_template = ChatPromptTemplate.from_template(
+                    """ You are an expert assistant on Indian Banking and NBFC regulations.
+        Answer the question by ONLY using the context provided below.
+        If the context does not contain enough information to answer, say:
+        "The preovided regulatory documents do not contain sufficient information to answer the questions".
+
+        For every claim in your answer, mention which document it comes from (use the source filename from the metadata).
+        Context: {context}
+        Question: {question}
+
+        Answer:"""
+)
+
+def format_docs(docs):
+    formatted = []
+    for docs in docs:
+        source = docs.metadata.get("source", "Unknown")
+        formatted.append(f"[Source: {source}]\n {docs.page_content}")
+    return "\n\n".join(formatted)
+
+rag_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt_template | llm | StrOutputParser()
+)
+
+test_questions = [
+   "What is the minimum capital adequacy ratio required for NBFC-MFIs?"
+]
+
+for q in test_questions:
+    print(f"\n{'='*80}")
+    print(f"QUESTION: {q}")
+    print(f"{'='*80}")
+    answer = rag_chain.invoke(q)
+    print(f"\nANSWER:\n{answer}")
