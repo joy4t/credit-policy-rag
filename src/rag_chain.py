@@ -19,6 +19,13 @@ def format_docs(docs):
 def build_rag_chain(data_dir="data"):
     load_dotenv()
 
+    if not os.environ.get('GROQ_API_KEY'):
+        try:
+            import streamlit as st
+            os.environ['GROQ_API_KEY'] = st.secrets['GROQ_API_KEY']
+        except(ImportError, KeyError):
+            raise ValueError('GROQ_API_KEY not found in .env or Streamlit secrets')
+
     # Load documents
     documents = []
     for filename in os.listdir(data_dir):
